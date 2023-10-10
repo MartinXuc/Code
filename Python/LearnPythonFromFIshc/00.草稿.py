@@ -1,10 +1,9 @@
 class Animal():
+    __count = 0
+    __age = 0
     def __init__(self,name,age):
         self.name = name
-        self.age = age
-
-dog = Animal('wangcai',5)
-cat = Animal('mimi',3)
-
-print(dog.name,dog.age)
-print(cat.name,cat.age)
+        self.__age = age
+        self.__count += 1
+dog=Animal('wangcai',3)
+print(dog.age)
