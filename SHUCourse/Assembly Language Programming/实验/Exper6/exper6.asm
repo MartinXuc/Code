@@ -1,5 +1,6 @@
 data segment
     linefeed db 0ah,0dh,'$'
+    hexChars db '0123456789ABCDEF$'
     input_msg db 'Please select the option you wish to input:$'
     input_name_msg db 'Input the name:$'
     input_number_msg db 'Input the number:$'
@@ -11,13 +12,15 @@ data segment
     successful_msg db 'Successful!$'
     show_database_msg db 'Current database is : $'
     show_count_msg db 'Current count is: $'
+    show_name_buffer_msg db 'Current name_buffer is : $'
+    show_number_buffer_msg db 'Current number_buffer is : $'
     database db 1024 dup('$')
     ;电话簿用1024byte存储
     ;规定人名占用16个Byte
     ;电话号码占用11个Byte
     ;一个对象占用16+11=27个字节
-    name_buffer db 16 dup(?),'$'
-    number_buffer db 11 dup(?),'$'
+    name_buffer db 17 dup(?),'$'
+    number_buffer db 12 dup(?),'$'
     count dw ?
 
 data ends
@@ -34,16 +37,22 @@ start:
     xor ax,ax
     mov count,ax
 input:
-    ;输出当前数据库
-    lea dx,show_database_msg
+    ;输出当前database的值
+    call show_database
+    call print_linefeed
+    ;输出当前name_buffer的值
+    lea dx,show_name_buffer_msg
     call print_msg
-    lea dx,database
-    call print_msg_linefeed
-    ;输出当前count值
-    lea dx,show_count_msg
+    lea si,name_buffer
+    mov cx,17
+    call show_string
+    call print_linefeed
+    ;输出当前number_buffer的值
+    lea dx,show_number_buffer_msg
     call print_msg
-    mov cx,count
-    call print_cx
+    lea si,number_buffer
+    mov cx,12
+    call show_string
     call print_linefeed
     ;输出提示语句
     lea dx,chose_msg1
@@ -116,23 +125,6 @@ print_input_error proc near
     ret
 print_input_error endp
 
-;将cx寄存器中的值显示为4位16进制数
-print_cx proc near
-    push ax
-    shl cx,4h
-    mov dl,ch
-    call print_number_4b
-    xor ch,ch
-    shl cx,4h
-    mov dl,ch
-    call print_number_4b
-    mov dl,'H'
-    mov ah,02h
-    int 21h
-    pop ax
-    ret
-print_cx endp
-
 ;将dl中的值以16进制输出
 print_number_4b proc near
     push ax
@@ -183,6 +175,47 @@ get_input_string proc near
         ret
 get_input_string endp
 
+show_string proc near
+    show_string_init:
+        push dx
+        push cx
+        push ax
+        push si
+    show_string_start:
+        mov dl,[si]
+        mov ah,02h
+        int 21h
+        inc si
+        loop show_string_start
+    show_string_return:
+        pop si
+        pop ax
+        pop cx
+        pop dx
+    ret
+show_string endp
+
+show_database proc near
+    show_database_init:
+        push dx
+        push cx
+        push ax
+        push si
+    show_database_start:
+        lea dx,show_database_msg
+        call print_msg
+        mov cx,1024
+        lea si,database
+        call show_string
+    show_database_return:
+        pop si
+        pop ax
+        pop cx
+        pop dx
+        ret
+    
+show_database endp
+
 ;--------------------------------------------------------------------------------------------------------
 ;------------------------------------------------------------------------------------------------------------
 ;------------------------------------------------------------------------------------------------------------
@@ -198,43 +231,45 @@ query_module proc near
         ;将count存入堆栈，因为本子程序会修改之
         mov ax,count
         push ax
+        ;将name_buffer缓冲区清空
+        lea si,name_buffer
+        mov cx,16
+        loop_clr_name_buffer:
+            mov [si],0
+            inc si
+            loop loop_clr_name_buffer
     query_module_input_name:
         ;输入输出操作
         lea dx,input_name_msg 
         call print_msg_linefeed
         lea di,name_buffer
-        mov cx,16
+        mov cx,17
         call get_input_string
     init_loc:
         ;初始化si的位置
         lea si,database
-        jmp compare_module
+    compare_module:
+        ;保护si地址
+        ;保证si指向对象开头
+        push si
+        push di
+        mov cx,16
+        cld
+        repe cmpsb
+        jz matching
+        pop di
+        pop si
     step_loc:
         ;步进一格
         add si,27
         ;count作为计数器
         ;当减到0说明比到了最后
         ;执行无匹配的逻辑
-        mov ax,count
-        dec ax
-        mov count,ax
+        dec count
         jz not_matching
-    compare_module:
-        ;保护si地址
-        ;保证si指向对象开头
-        push si
-        push cx
-            mov cx,16
-            cld
-            repe cmpsb
-            jz matching
-        pop cx
-        pop si
-        ;匹配失败，就步进一格
-        jmp step_loc
+        jmp compare_module
     matching:
-        ;匹配成功，先将之前push的两个值pop出来
-        pop cx
+        pop di
         pop si
         ;将si指向该对象的电话号码
         add si,16
@@ -284,7 +319,7 @@ add_module proc near
         call print_msg_linefeed
         ;输入人名字符串
         lea di,name_buffer
-        mov cx,16
+        mov cx,17
         call get_input_string
         ;检查输入是否合法
         call check_name
@@ -296,7 +331,7 @@ add_module proc near
         call print_msg_linefeed
         ;输入电话字符串
         lea di,number_buffer
-        mov cx,11
+        mov cx,12
         call get_input_string
         ;检查输入是否合法
         call check_number
@@ -312,32 +347,23 @@ add_module proc near
         ;获取人名缓冲区地址
         lea si,name_buffer
         ;将人名插入database
-        push si
         push di
         mov cx,16
         cld
         rep movsb
         pop di
-        pop si
         ;将di后移
         add di,16
         ;获取电话号码缓冲区地址
         lea si,number_buffer
         ;将电话号码插入database
-        push si
         push di
         mov cx,11
         cld
         rep movsb
         pop di
-        pop si
         ;di后移
         add di,11
-        ;成功后输出提示信息
-        lea dx,successful_msg
-        call print_msg_linefeed
-        ;count+1
-        inc count
         jmp add_module_return
     invalid_name:
         call print_input_error
@@ -348,6 +374,11 @@ add_module proc near
         call print_linefeed
         jmp add_module_input_number
     add_module_return:
+        ;输出提示信息
+        lea dx,successful_msg
+        call print_msg_linefeed
+        ;count+1
+        inc count
         pop di
         pop si
         pop dx
