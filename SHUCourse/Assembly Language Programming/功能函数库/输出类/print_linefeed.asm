@@ -1,12 +1,12 @@
-;本函数要求数据段定义有：
-;linefeed db 0ah,0dh,'$'
 print_linefeed proc near
     print_linefeed_init:
         push ax
         push dx
     print_linefeed_body:
-        lea dx,linefeed
-        mov ah,09h
+        mov dl,0ah
+        call print_char
+        mov dl,0dh
+        call print_char
         int 21h
     print_linefeed_return:
         pop dx
